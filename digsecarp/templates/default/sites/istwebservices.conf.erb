@@ -1,0 +1,75 @@
+# IST Web Services HTTP Traffic
+#	- Redirect to SSL Site
+<VirtualHost *:80>
+    RewriteEngine On
+    ServerName <%= @params[:webservicednsname] %>
+    ServerSignature off
+
+    RewriteCond %{HTTPS} off
+    RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI}
+</VirtualHost>
+
+# IST Web Services HTTPS Traffic
+<VirtualHost *:443>
+    # Generic setting
+    ServerName <%= "https://#{@params[:webservicednsname]}:443" %>
+    ServerSignature off
+
+    # SSL Enable
+    SSLEngine On
+    SSLProtocol All -SSLv2 -SSLv3
+    SSLHonorCipherOrder on
+    SSLCipherSuite HIGH:MEDIUM
+    SSLCertificateFile <%= @params[:sslCert] %>
+    SSLCertificateKeyFile <%= @params[:sslKey] %>
+
+	SetEnvIf User-Agent ".*MSIE.*" \
+         nokeepalive ssl-unclean-shutdown \
+         downgrade-1.0 force-response-1.0
+
+    # Errorlog (debug, info, notice, warn, error, crit,alert, emerg)
+    LogLevel warn
+    ErrorLog /etc/httpd/logs/error-istwebservices.log
+
+    # Access log
+    CustomLog /etc/httpd/logs/access-istwebservices.log combined
+
+    # SSL log
+    CustomLog /etc/httpd/logs/ssl_request_log-istwebservices.log "%t %h %{SSL_PROTOCOL}x %{SSL_CIPHER}x \"%r\" %b"
+
+    #######################################################################
+    #                                                                     #
+    # HSTS AND X-Frame-Options Header                                     #
+    #                                                                     #
+    #######################################################################
+
+    Header always set Strict-Transport-Security "max-age=63072000; includeSubdomains; preload"
+    Header always set X-Frame-Options DENY
+
+    #######################################################################
+    #                                                                     #
+    # Reverse Proxy Section                                               #
+    #                                                                     #
+    #######################################################################
+
+	# Disable forwarding proxy
+	ProxyRequests Off
+
+	# Allow SSL connection to the backend server
+	SSLProxyEngine On
+
+	# Keep original hostname
+	ProxyPreserveHost On
+
+    # Enable Proxying for this site
+    <Location / >
+        Order allow,deny
+        Allow from all
+    </Location>
+
+	# Proxy all other requests to the backend server
+	ProxyPass / <%= "https://#{@params[:elb_webservices]}/" %>
+	ProxyPassReverse / <%= "https://#{@params[:elb_webservices]}/" %>
+
+	ProxyPassReverseCookieDomain <%= @params[:elb_webservices] %> <%= @params[:webservicednsname] %>
+</VirtualHost>

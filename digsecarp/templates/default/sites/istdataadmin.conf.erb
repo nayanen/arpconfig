@@ -1,0 +1,108 @@
+# IST Data Admin HTTP Traffic
+<VirtualHost *:80>
+    RewriteEngine On
+    ServerName <%= @params[:data_admin_dns_name] %>
+    ServerSignature off
+
+    RewriteCond %{HTTPS} off
+    RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI}
+</VirtualHost>
+
+# IST Data Admin Server HTTPS Traffic
+<VirtualHost *:443>
+    # Generic setting
+    ServerName <%= "https://#{@params[:data_admin_dns_name]}:443" %>
+    ServerSignature off
+
+    # SSL Enable
+    SSLEngine On
+    SSLProtocol All -SSLv2 -SSLv3
+    SSLHonorCipherOrder on
+    SSLCipherSuite HIGH:MEDIUM
+    SSLCertificateFile <%= @params[:sslCert] %>
+    SSLCertificateKeyFile <%= @params[:sslKey] %>
+
+	SetEnvIf User-Agent ".*MSIE.*" \
+         nokeepalive ssl-unclean-shutdown \
+         downgrade-1.0 force-response-1.0
+
+    # Errorlog (debug, info, notice, warn, error, crit,alert, emerg)
+    LogLevel warn
+    ErrorLog /etc/httpd/logs/error-istdatadmin.log
+
+    # Access log
+    CustomLog /etc/httpd/logs/access-istdatadmin.log combined
+
+    # SSL log
+    CustomLog /etc/httpd/logs/ssl_request_log-istdatadmin.log "%t %h %{SSL_PROTOCOL}x %{SSL_CIPHER}x \"%r\" %b"
+
+    #######################################################################
+    #                                                                     #
+    # HSTS AND X-Frame-Options Header                                     #
+    #                                                                     #
+    #######################################################################
+
+    Header always set Strict-Transport-Security "max-age=63072000; includeSubdomains; preload"
+    Header always set X-Frame-Options DENY
+
+    #######################################################################
+    #                                                                     #
+    # Shibboleth - Generic Section                                        #
+    #                                                                     #
+    #######################################################################
+
+    # SHIBBOLETH - SECURITY SETTINGS
+
+    # Ensure that the correct name and port are used to prevent evation of policies
+    UseCanonicalName On
+    UseCanonicalPhysicalPort On
+
+    # Ensure that the shibboleth module handles the shibboleth requests
+    <Location /proxy/Shibboleth.sso>
+            SetHandler shib
+    </Location>
+
+    # SHIBBOLETH - AUTHENTICATION and AUTHORIZATION PROVIDER
+
+    <Location />
+        # Set Auth / Authz provider
+        AuthType shibboleth
+        require shibboleth
+
+        # Make the configuration future proof to be used Shibboleth 2.5
+        ShibCompatWith24 On
+        ShibUseEnvironment On
+        # ShibUseHeaders Off
+
+        ShibRequestSetting requireSession 1
+        require shib-session
+
+        # Enable Proxying for this site
+        Order allow,deny
+        Allow from all
+    </Location>
+
+    #######################################################################
+    #                                                                     #
+    # Reverse Proxy Section                                               #
+    #                                                                     #
+    #######################################################################
+
+	# Disable forwarding proxy
+	ProxyRequests Off
+
+	# Allow SSL connection to the backend server
+	SSLProxyEngine On
+
+	# Keep original hostname
+	ProxyPreserveHost On
+
+    # Do Not Proxy Shibboleth
+    ProxyPass /proxy/Shibboleth.sso !
+
+	# Proxy all other requests to the backend server
+	ProxyPass / <%= "https://#{@params[:elb_data_admin]}/" %>
+	ProxyPassReverse / <%= "https://#{@params[:elb_data_admin]}/" %>
+
+	ProxyPassReverseCookieDomain <%= @params[:elb_data_admin] %> <%= @params[:data_admin_dns_name] %>
+</VirtualHost>

@@ -1,0 +1,83 @@
+# IST Cert Server HTTP Traffic
+# - Forward as SSL
+<VirtualHost *:80>
+    ServerName <%= @params[:certserverdnsname] %> 
+    ServerSignature off
+
+    # Allow SSL connection to the backend server
+    SSLProxyEngine On
+
+    # Keep original hostname
+    ProxyPreserveHost On
+
+    RequestHeader set Host "<%= @params[:certserverdnsname] %>"
+
+    # Proxy all other requests to the backend server
+    ProxyPass /  <%= "https://#{@params[:elb_certserver]}/" %> 
+    ProxyPassReverse / <%= "https://#{@params[:elb_certserver]}/" %>
+    
+    # Enable Proxying for this site
+    <Location / >
+        Order allow,deny
+        Allow from all
+    </Location>
+
+    ProxyPassReverseCookieDomain <%= @params[:elb_certserver] %> <%= @params[:certserverdnsname] %>
+
+</VirtualHost>
+
+# IST Cert Server HTTPS Traffic
+<VirtualHost *:443>
+    # Generic setting
+    ServerName <%= "https://#{@params[:certserverdnsname]}:443" %>
+    ServerSignature off
+
+    # SSL Enable
+    SSLEngine On
+    SSLProtocol -all +TLSv1
+    SSLHonorCipherOrder on
+    SSLCipherSuite HIGH:MEDIUM
+    SSLCertificateFile <%= @params[:sslCert] %>
+    SSLCertificateKeyFile <%= @params[:sslKey] %>
+
+	SetEnvIf User-Agent ".*MSIE.*" \
+         nokeepalive ssl-unclean-shutdown \
+         downgrade-1.0 force-response-1.0
+
+    # Errorlog (debug, info, notice, warn, error, crit,alert, emerg)
+    LogLevel warn
+    ErrorLog /etc/httpd/logs/error-istcertserver.log
+
+    # Access log
+    CustomLog /etc/httpd/logs/access-istcertserver.log combined
+
+    # SSL log
+    CustomLog /etc/httpd/logs/ssl_request_log-istcertserver.log "%t %h %{SSL_PROTOCOL}x %{SSL_CIPHER}x \"%r\" %b"
+
+    #######################################################################
+    #                                                                     #
+    # Reverse Proxy Section                                               #
+    #                                                                     #
+    ####################################################################### 
+	
+	# Disable forwarding proxy
+	ProxyRequests Off
+
+	# Allow SSL connection to the backend server
+	SSLProxyEngine On
+
+	# Keep original hostname
+	ProxyPreserveHost On
+
+    # Enable Proxying for this site
+    <Location / >
+        Order allow,deny
+        Allow from all
+    </Location>
+
+	# Proxy all other requests to the backend server
+	ProxyPass / <%= "https://#{@params[:elb_certserver]}/" %> 
+	ProxyPassReverse / <%= "https://#{@params[:elb_certserver]}/" %> 
+
+	ProxyPassReverseCookieDomain <%= @params[:elb_certserver] %> <%= @params[:certserverdnsname] %>
+</VirtualHost>
